@@ -7,7 +7,9 @@
 (defpackage garmin
   (:use :cl)
   (:export
-   :upload-everything))
+   :upload
+   :upload-edge
+   :upload-fr))
 
 (in-package :garmin)
 
@@ -16,12 +18,17 @@
 
 (defvar *username* nil)
 (defvar *password* nil)
-(defvar *uploaded-files* nil)
+(defvar *uploaded* nil)
+(defvar *activities-directories* nil)
 
 (defvar *cookie-jar* (make-instance 'drakma:cookie-jar))
-(defvar *activities-directory* #p"/mnt/garmin/Garmin/Activities/")
+
+(defvar *device-type* :edge
+  ":edge or :fr")
 
 (defvar *signin* "https://connect.garmin.com/signin")
+(defvar *upload-url*
+  "http://connect.garmin.com/proxy/upload-service-1.1/json/upload/.fit")
 
 (defun request (url parameters &key form-data (method :post))
   (drakma:http-request url
@@ -46,7 +53,7 @@
      (equal (stp:attribute-value node name) value))
    document))
 
-(defun parse-html (page) 
+(defun parse-html (page)
   (chtml:parse page (stp:make-builder)))
 
 (defun get-j-id ()
@@ -80,16 +87,17 @@
 (defun view-activity (id)
   (launch-browser (format nil "http://connect.garmin.com/activity/~a" id)))
 
-(defun upload (file)
+(defun upload-file (file)
+  (format t "Uploading file ~a~%" (file-namestring file))
   (multiple-value-bind (response status)
-      (request "http://connect.garmin.com/proxy/upload-service-1.1/json/upload/.fit"
+      (request *upload-url*
                `(("responseContentType" . "text/html")
                  ("data" ,(pathname file) :filename ,(file-namestring file)))
                :form-data t)
     (case status
       (200
        (parse-response response)
-       (pushnew (file-namestring file) *uploaded-files*))
+       (pushnew (file-namestring file) (getf *uploaded* *device-type*)))
       (t
        (error "Bad status ~a ~a" status
               (babel:octets-to-string  response))))))
@@ -97,11 +105,13 @@
 (defun read-config ()
   (with-open-file (stream *config-file*)
     (destructuring-bind (&key username password
-                              uploaded)
+                              uploaded
+                              path)
         (read stream)
-      (setf *uploaded-files* uploaded
+      (setf *uploaded* uploaded
             *username* username
-            *password* password)
+            *password* password
+            *activities-directories* path)
       (values))))
 
 (defun write-config ()
@@ -109,24 +119,41 @@
                                         :if-exists :supersede)
     (prin1 (list :username *username*
                  :password *password*
-                 :uploaded *uploaded-files*)
-           stream)))
+                 :path *activities-directories*
+                 :uploaded *uploaded*)
+           stream)
+    (values)))
 
 (defun files-to-upload ()
-  (loop for file in (directory (merge-pathnames "*.fit" *activities-directory*))
-        unless (member (file-namestring file) *uploaded-files* :test #'equal)
-        collect file))
+  (set-difference (directory (merge-pathnames "*.fit"
+                                              (getf *activities-directories*
+                                                    *device-type*)))
+                  (getf *uploaded* *device-type*)
+                  :test #'equal :key #'file-namestring))
 
-(defun upload-everything ()
+(defun upload ()
   (read-config)
   (login)
-  (mapc #'upload (files-to-upload))
+  (mapc #'upload-file (files-to-upload))
   (write-config))
+
+(defun upload-fr ()
+  (let ((*device-type* :fr))
+    (upload)))
+
+(defun upload-edge ()
+  (let ((*device-type* :edge))
+    (upload)))
 
 #+(or)
 (ccl:save-application "do-garmin-upload"
                       :toplevel-function
                       (lambda ()
-                        (unwind-protect (garmin:upload-everything)
+                        (unwind-protect
+                             (if (equal (file-namestring
+                                         (car ccl:*command-line-argument-list*))
+                                        "ugfr")
+                                 (garmin:upload-fr)
+                                 (garmin:upload-edge))
                           (ccl:quit)))
                       :prepend-kernel t)
