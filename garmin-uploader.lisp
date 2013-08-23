@@ -71,11 +71,20 @@
              ("login:signInButton" . "Sign In")
              ("javax.faces.ViewState" . ,(get-j-id)))))
 
+(defun print-errors (json)
+  (format t "An error has occured:~% ")
+  (let* ((entries (caar (cdr (assoc :entries
+                                   (cdr (assoc :report json))))))
+         (report (cdr (assoc :trace (cdr (assoc :trace entries))))))
+    (write-line (subseq report 0 (position #\Newline report)))))
+
 (defun parse-response (response)
   (let* ((json (cdar (json:decode-json-from-string response)))
          (id (cdr (assoc :internal-id (cadr (assoc :successes json))))))
-    (when id
-      (view-activity id))))
+    (cond (id
+           (view-activity id))
+          (t
+           (print-errors json)))))
 
 (defun launch-browser (url)
   #+sbcl(sb-ext:run-program "opera" (list url)
@@ -94,13 +103,14 @@
                `(("responseContentType" . "text/html")
                  ("data" ,(pathname file) :filename ,(file-namestring file)))
                :form-data t)
+    (print response)
     (case status
       (200
        (parse-response response)
        (pushnew (file-namestring file) (getf *uploaded* *device-type*)))
       (t
        (error "Bad status ~a ~a" status
-              (babel:octets-to-string  response))))))
+              (babel:octets-to-string  response :encoding :latin1))))))
 
 (defun read-config ()
   (with-open-file (stream *config-file*)
