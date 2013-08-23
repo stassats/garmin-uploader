@@ -71,12 +71,20 @@
              ("login:signInButton" . "Sign In")
              ("javax.faces.ViewState" . ,(get-j-id)))))
 
+(defun find-failures (json)
+  (let ((failure (cadr (assoc :messages (cadr (assoc :failures json))))))
+    (cdr (assoc :content failure))))
+
 (defun print-errors (json)
   (format t "An error has occured:~% ")
   (let* ((entries (caar (cdr (assoc :entries
                                    (cdr (assoc :report json))))))
-         (report (cdr (assoc :trace (cdr (assoc :trace entries))))))
-    (write-line (subseq report 0 (position #\Newline report)))))
+         (report (cdr (assoc :trace (cdr (assoc :trace entries)))))
+         (message (or (subseq report 0 (position #\Newline report))
+                      (find-failures json))))
+    (if message
+        (write-line message)
+        (pprint json))))
 
 (defun parse-response (response)
   (let* ((json (cdar (json:decode-json-from-string response)))
@@ -112,26 +120,29 @@
               (babel:octets-to-string  response))))))
 
 (defun read-config ()
-  (with-open-file (stream *config-file*)
-    (destructuring-bind (&key username password
-                              uploaded
-                              path)
-        (read stream)
-      (setf *uploaded* uploaded
-            *username* username
-            *password* password
-            *activities-directories* path)
-      (values))))
+  (with-standard-io-syntax
+    (with-open-file (stream *config-file*)
+      (destructuring-bind (&key username password
+                                uploaded
+                                path)
+          (read stream)
+        (setf *uploaded* uploaded
+              *username* username
+              *password* password
+              *activities-directories* path)
+        (values)))))
 
 (defun write-config ()
-  (with-open-file (stream *config-file* :direction :output
-                                        :if-exists :supersede)
-    (prin1 (list :username *username*
-                 :password *password*
-                 :path *activities-directories*
-                 :uploaded *uploaded*)
-           stream)
-    (values)))
+  (with-standard-io-syntax
+    (let (*print-pretty*)
+     (with-open-file (stream *config-file* :direction :output
+                                           :if-exists :supersede)
+       (prin1 (list :username *username*
+                    :password *password*
+                    :path *activities-directories*
+                    :uploaded *uploaded*)
+              stream)
+       (values)))))
 
 (defun files-to-upload ()
   (set-difference (directory (merge-pathnames "*.fit"
@@ -142,9 +153,13 @@
 
 (defun upload ()
   (read-config)
-  (login)
-  (mapc #'upload-file (files-to-upload))
-  (write-config))
+  (let ((files-to-upload (files-to-upload)))
+    (cond (files-to-upload
+           (login)
+           (mapc #'upload-file files-to-upload)
+           (write-config))
+          (t
+           (write-line "Nothing to upload")))))
 
 (defun upload-fr ()
   (let ((*device-type* :fr))
@@ -166,3 +181,16 @@
                                  (garmin:upload-edge))
                           (ccl:quit)))
                       :prepend-kernel t)
+#+(or)
+(sb-ext:save-lisp-and-die "do-garmin-upload"
+                          :toplevel
+                          (lambda ()
+                            (unwind-protect
+                                 (if (equal (file-namestring
+                                             (car sb-ext:*posix-argv*))
+                                            "ugfr")
+                                     (garmin:upload-fr)
+                                     (garmin:upload-edge))
+                              (sb-ext:exit)))
+                          :executable t
+                          :compression 9)
