@@ -109,7 +109,7 @@
        (pushnew (file-namestring file) (getf *uploaded* *device-type*)))
       (t
        (error "Bad status ~a ~a" status
-              (babel:octets-to-string  response :encoding :latin1))))))
+              (babel:octets-to-string  response))))))
 
 (defun read-config ()
   (with-open-file (stream *config-file*)
