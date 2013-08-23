@@ -103,7 +103,6 @@
                `(("responseContentType" . "text/html")
                  ("data" ,(pathname file) :filename ,(file-namestring file)))
                :form-data t)
-    (print response)
     (case status
       (200
        (parse-response response)
