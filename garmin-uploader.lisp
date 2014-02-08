@@ -108,8 +108,8 @@
   (format t "Uploading file ~a~%" (file-namestring file))
   (multiple-value-bind (response status)
       (request *upload-url*
-               `(("responseContentType" . "text/html")
-                 ("data" ,(pathname file) :filename ,(file-namestring file)))
+               `(("data" ,(pathname file) :filename ,(file-namestring file))
+                 ("responseContentType" . "text/html"))
                :form-data t)
     (let ((response (if (stringp response)
                         response
@@ -117,7 +117,8 @@
      (case status
        (200
         (parse-response response)
-        (pushnew (file-namestring file) (getf *uploaded* *device-type*)))
+        (pushnew (file-namestring file) (getf *uploaded* *device-type*)
+                 :test #'equal))
        (t
         (error "Bad status ~a ~a" status response))))))
 
