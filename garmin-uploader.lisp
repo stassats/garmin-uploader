@@ -95,10 +95,10 @@
            (print-errors json)))))
 
 (defun launch-browser (url)
-  #+sbcl(sb-ext:run-program "opera" (list url)
+  #+sbcl(sb-ext:run-program "browser" (list url)
                             :search t
                             :wait nil)
-  #+ccl(ccl:run-program "opera" (list url)
+  #+ccl(ccl:run-program "browser" (list url)
                         :wait nil))
 
 (defun view-activity (id)
@@ -111,13 +111,15 @@
                `(("responseContentType" . "text/html")
                  ("data" ,(pathname file) :filename ,(file-namestring file)))
                :form-data t)
-    (case status
-      (200
-       (parse-response response)
-       (pushnew (file-namestring file) (getf *uploaded* *device-type*)))
-      (t
-       (error "Bad status ~a ~a" status
-              (babel:octets-to-string  response))))))
+    (let ((response (if (stringp response)
+                        response
+                        (babel:octets-to-string response))))
+     (case status
+       (200
+        (parse-response response)
+        (pushnew (file-namestring file) (getf *uploaded* *device-type*)))
+       (t
+        (error "Bad status ~a ~a" status response))))))
 
 (defun read-config ()
   (with-standard-io-syntax
